@@ -1,0 +1,355 @@
+<html>
+<head>
+<title>Particle Systems</title>
+<link id="themeStyles" rel="stylesheet" href="/dojo/dijit/themes/tundra/tundra.css">
+<script type="text/javascript" src="colors.js"></script>
+<script type="text/javascript" src="/dojo/dojo/dojo.js"
+	    djConfig="parseOnLoad:true, isDebug:true"></script>
+<style type="text/css">
+	@import "/dojo/dojo/resources/dojo.css";
+	@import "/dojo/menuStackController.css";
+</style>
+
+
+<script type="text/javascript">
+	dojo.require("dojo.parser");
+	dojo.require("dojox.gfx");
+	dojo.require("dojox.timing");
+	
+	//physics constants
+	var DAMPENING = 0.85;  //damp the velocity by 15%
+	var MAX_VELO = 25;  //bound the velocity to 25px/55ms
+	var SPRING_CONSTANT = 0.15;  //k in classical spring function f=kx+b
+	
+	//particle sizing constants
+	//distance to resting position / max_particle_dist = new particle size / max particle size.  
+	//size bounded by min and max
+	var MIN_PARTICLE_SIZE = 10;
+	var MAX_PARTICLE_SIZE = 100;
+	var MAX_PARTICLE_DIST = 200;
+	
+	//max radius around mouse that particles are affected, min is 0
+	//game loop decrements radius, mouse move sets it back to max
+	var MAX_MOUSE_RADIUS = 200;
+	
+	//grid rows and columns
+	var X_PIXELS = 899;
+	var Y_PIXELS = 574;
+	var MAX_ROWS = Y_PIXELS / MIN_PARTICLE_SIZE;
+	var MAX_COLS = X_PIXELS / MIN_PARTICLE_SIZE;
+	
+	//offset of grid
+	var X_OFFSET = 168;
+	var Y_OFFSET = 10;
+	
+	var PARTICLE_SHAPE = 'rect'; // or 'circle' or 'image'
+
+	//top level namespace
+	ps = {
+		particles:[], 
+		play: true,
+		radius: MAX_MOUSE_RADIUS,
+		inLoop: false,
+		leafBlower: false,
+		mousePos:{
+			x: -1,
+			y: -1
+		}
+	};
+
+	ps.timer = new dojox.timing.Timer(55);
+	ps.timer.onTick =function(){ !ps.inLoop ? ps.gameLoop(): 0;};
+	
+	//saves new mouse position, resets radius
+	ps.setPtr = function(e){
+		ps.radius = MAX_MOUSE_RADIUS;
+		ps.mousePos.x = e.clientX;
+		ps.mousePos.y = e.clientY;
+	};
+	
+	//not sure if this is bound to the right thing...
+	ps.resize = function() {
+		if(ps.canvas){
+			dojo.style(mainDiv, 'height', window.innerHeight+'px');
+			dojo.style(mainDiv, 'width', window.innerWidth+'px');
+
+			ps.drawLoop();
+		}
+	};
+	
+	
+	//takes base and end points
+	ps.normalize = function(bx, by, rx, ry){
+		var dist = ps.getDistance(bx,by,rx,ry);
+		if(dist< 0.000002){
+			return;
+		}
+		return {
+			x: (rx-bx)/dist,
+			y: (ry-by)/dist
+		}
+	}
+	
+	//euclidean distance
+	ps.getDistance = function(x1,y1,x2,y2){
+		return Math.sqrt(Math.pow(x1-x2,2) + Math.pow(y1-y2,2));
+	}
+	
+	if(PARTICLE_SHAPE == 'circle'){
+		ps.getCenter = function(particle){
+			return {x:  particle.matrix.dx || 0, y:  particle.matrix.dy || 0};
+		}
+		ps.setCenter = function(particle, x,y,z){
+			particle.setTransform({dx: x, dy: y});
+		}
+		ps.setSize = function(particle, size){
+			particle.setShape({ r: size });
+		}
+	}else{
+		ps.getCenter = function(particle){
+			return {x: (particle.matrix.dx + particle.shape.width/2 )||0, y: (particle.matrix.dy + particle.shape.height/2)||0};
+		}
+		ps.setCenter = function(particle, x,y,z){
+			particle.setTransform({dx: x - particle.shape.width/2, dy: y - particle.shape.height/2});
+		}
+		ps.setSize = function(particle, size){
+			particle.setShape({ width: size, height: size});
+		}
+	}
+	
+	ps.dotProduct = function(x1,y1,x2,y2){
+		return x1*x2 + y1*y2;
+	}
+	
+	ps.reflect = function(circle, normal){
+		var temp = {x:0,y:0};
+		normal = ps.normalize(0,0,normal.x,normal.y);
+		//vec negativeSelf(-v[0],-v[1],-v[2]);
+		var dot = ps.dotProduct(circle.velocity.x * -1, circle.velocity.y * -1, normal.x,normal.y);
+		circle.velocity.x = normal.x * 2 * dot + circle.velocity.x;
+		circle.velocity.y = normal.y * 2 * dot + circle.velocity.y;
+		//return temp;
+	}
+	
+	ps.colDetect = function(x1, y1, x2, y2, x3, y3, r){
+		//http://local.wasp.uwa.edu.au/~pbourke/geometry/sphereline/
+		var a = Math.pow((x2 - x1),2) + Math.pow((y2 - y1),2);
+		var b = 2 * ( (x2 - x1) * (x1 - x3) + (y2 - y1) * (y1 - y3) );
+		var c = Math.pow(x3,2) + Math.pow(y3,2)+ Math.pow(x1,2) + Math.pow(y1,2) - 2 * (x3* x1 + y3 *y1) - Math.pow(r,2);
+		
+		var mu,s = b * b - 4 * a * c;
+		if(s<0){
+			//no intersetion
+			return;
+		}else if ( s == 0.0 ){
+			// one intersection
+
+			mu = -b / (2 * a);
+
+			return{
+				x:  x1 + mu *(x2 - x1),
+				y:  y1 + mu *(y2 - y1)
+			};
+		}else if ( s > 0.0 ){
+			// two intersections
+			
+			// first intersection
+			mu = (-b + Math.sqrt( Math.pow(b,2) - 4*a*c )) / (2*a);
+			var p1 = {
+				x: x1 + mu*(x2-x1),
+				y: y1 + mu*(y2-y1)
+			};
+			// second intersection
+			mu = (-b - Math.sqrt(Math.pow(b,2) - 4*a*c )) / (2*a);
+			var p2 = {
+				x: x1 + mu*(x2-x1),
+				y: y1 + mu*(y2-y1)
+			};
+			
+			//get closest intersection
+			if(ps.getDistance(x1,y1,p1.x,p1.y) < ps.getDistance(x1,y1,p2.x,p2.y)){
+				return p1;
+			}else{
+				return p2;
+			}
+		}
+	}
+	
+	ps.gameLoop = function(){
+		//console.log('[gameLoop]');
+		ps.inLoop = true;
+		if(ps.radius <= 1){
+			//console.log('radius is 0.');
+			ps.radius = 0;
+		}else{
+			ps.radius -= 1;
+		}
+		var i, fMag,n, particle, f = {x: 0,y:0}, posX, posY, ptrDist, ratio, ptrNorm, dx, dy, dd, d, center;
+		for(i=0;i<ps.particles.length;i++){
+			particle = ps.particles[i];
+			
+			center = ps.getCenter(particle);
+			
+			dx = ps.mousePos.x - center.x;
+			dy = ps.mousePos.y - center.y;
+			dd = (dx * dx) + (dy * dy);
+			d = Math.sqrt(dd);
+			
+			if (d < ps.radius) {
+				particle.targetPos.x = center.x - dx;
+				particle.targetPos.y = center.y - dy;
+			} else {
+				if(!ps.leafBlower){
+					particle.targetPos.x = particle.restingPos.x;
+					particle.targetPos.y = particle.restingPos.y;
+				}else{
+					particle.targetPos.x = -1;
+					particle.targetPos.y = -1;
+				}
+			};
+			
+			
+			if(particle.targetPos.x != -1 && particle.targetPos.y != -1){
+				//f = kx;  magnitude of force defined by spring fctn
+				var particleDist = ps.getDistance(center.x, center.y, particle.targetPos.x, particle.targetPos.y);
+				fMag = SPRING_CONSTANT*particleDist;
+				
+				var particleRadius = ps.getDistance(center.x, center.y, particle.restingPos.x, particle.restingPos.y) * MAX_PARTICLE_SIZE / MAX_PARTICLE_DIST;
+				
+				if(particleRadius > MAX_PARTICLE_SIZE) {
+					particleRadius = MAX_PARTICLE_SIZE;
+				}else if(particleRadius < MIN_PARTICLE_SIZE) {
+					particleRadius = MIN_PARTICLE_SIZE;
+				}
+				if(!ps.leafBlower){
+					ps.setSize(particle, particleRadius);
+				}else{
+					ps.setSize(particle,  MIN_PARTICLE_SIZE);
+				}
+				//normal of force
+				n = ps.normalize(center.x, center.y, particle.targetPos.x, particle.targetPos.y);
+				
+				//avoid divide by 0 and NaN errors
+				if(n){
+					//normal scaled by force magnitude
+					f.x = fMag * n.x;
+					f.y = fMag * n.y;
+					
+					//accel=force/mass; mass=1, a=f;
+					//velo[new] = velo[old] + accel;
+					particle.velocity.x += f.x;
+					particle.velocity.y += f.y;
+					
+					//dampening
+					particle.velocity.x *= DAMPENING;
+					particle.velocity.y *= DAMPENING;
+					
+					if (particle.velocity.x > MAX_VELO){
+						particle.velocity.x = MAX_VELO;
+					}
+					if (particle.velocity.y > MAX_VELO){
+						particle.velocity.y = MAX_VELO;
+					}
+					
+					//position[new] = position[old] + velo;
+					posX = center.x + particle.velocity.x;
+					posY = center.y + particle.velocity.y;
+					
+					
+					
+					//console.log(posX,', ',posY);
+					//particle.setTransform({dx: posX, dy: posY, dz: particleRadius});
+					ps.setCenter(particle, posX, posY, particleRadius);
+				}
+			}else{
+			
+				//dampening
+				particle.velocity.x *= DAMPENING;
+				particle.velocity.y *= DAMPENING;
+				
+				if (particle.velocity.x > MAX_VELO){
+					particle.velocity.x = MAX_VELO;
+				}
+				if (particle.velocity.y > MAX_VELO){
+					particle.velocity.y = MAX_VELO;
+				}
+
+				//position[new] = position[old] + velo;
+				posX = center.x + particle.velocity.x;
+				posY = center.y + particle.velocity.y;
+				
+				
+				
+				//console.log(posX,', ',posY);
+				//particle.setTransform({dx: posX, dy: posY,dz: particleRadius});
+				ps.setCenter(particle, posX, posY, particleRadius);
+			}
+		}
+		ps.inLoop = false;
+	};
+	
+	
+	dojo.addOnLoad(function(){
+		//tiled images with imagemagick, command line was:
+		// convert -crop 45x45 /home/craigb/Desktop/O_.png ~/jsps/tiles/tile_%d.png
+
+		console.log('[init]');
+		var mainDiv = dojo.byId('main');
+		ps.canvas = dojox.gfx.createSurface(dojo.byId('main'), window.innerWidth,window.innerHeight);
+		dojo.style(mainDiv, 'height', window.innerHeight+'px');
+		dojo.style(mainDiv, 'width', window.innerWidth+'px');
+		dojo.style(mainDiv, 'background', '#000000');
+		
+		//var orange = [246,103,51];
+		//var purple = [82,45,128];
+		//var circle = { cx: 0, cy: 0, r: MIN_PARTICLE_SIZE };
+		//var img = { x: 0, y: 0, width: MIN_PARTICLE_SIZE, height: MIN_PARTICLE_SIZE, src: ''};
+		var rect = { x: 0, y: 0, width: MIN_PARTICLE_SIZE, height: MIN_PARTICLE_SIZE};
+		
+		var count = 0, color=[],i,j,k;
+		color[3] = 1;
+		for(i = 0;i<MAX_COLS;i++){
+			for(j =0;j<MAX_ROWS;j++){
+				/*for(k=0;k<3;k++){
+					color[k] = orange[k] * (j/MAX_COLS) + purple[k]*((MAX_COLS - j)/MAX_COLS) - 100*((MAX_ROWS - i)/MAX_ROWS);
+					color[k] = Math.floor(color[k]);
+					if(color[k]>255){
+						color[k] = 255;
+					}else if (color[k]<0){
+						color[k] = 0;
+					}
+				}*/
+				//rect.src = 'tiles/tile_'+((j-1)*11+i-1) + '.png';
+				//console.log('checking '+i+'x'+j);
+				if(colors[i+'x'+j]){
+					//console.log(colors[i+'x'+j]);
+					
+					//color = colors[(i-1)+'x'+(j-1)];
+					//color[3] = 1;
+					
+					//ps.particles[count] = ps.canvas.createCircle(circle).setFill(colors[i+'x'+j]).setTransform({ dx: 0, dy: 0 });
+					ps.particles[count] = ps.canvas.createRect(rect).setFill(colors[i+'x'+j]).setTransform({ dx: 0, dy: 0, dz: 0 });
+					//ps.particles[count] = ps.canvas.createImage(img).setFill(color).setTransform({ dx: 0, dy: 0 });
+
+					ps.particles[count].restingPos = {x: X_OFFSET+ i*(MIN_PARTICLE_SIZE - 1), y: Y_OFFSET+ j*(MIN_PARTICLE_SIZE - 1)};
+					ps.particles[count].targetPos = {x: 0,y:0};
+					ps.particles[count].velocity = {x: 0, y:0};
+					count++;
+				}
+			}
+		}
+		
+		ps.timer.start();
+		document.resize = ps.resize;
+		document.onmousemove=ps.setPtr;
+		document.onclick=function(e){
+			console.log(e.clientX, e.clientY,e);
+		}
+	});
+</script>
+</head>
+  <body>
+	  <div id='main'/>
+  </body>
+
+</html>
