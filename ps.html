@@ -1,20 +1,12 @@
 <html>
 <head>
 <title>Particle Systems</title>
-<link id="themeStyles" rel="stylesheet" href="/dojo/dijit/themes/tundra/tundra.css">
 <script type="text/javascript" src="colors.js"></script>
-<script type="text/javascript" src="/dojo/dojo/dojo.js"
-	    djConfig="parseOnLoad:true, isDebug:true"></script>
-<style type="text/css">
-	@import "/dojo/dojo/resources/dojo.css";
-	@import "/dojo/menuStackController.css";
-</style>
+<script src="http://ajax.googleapis.com/ajax/libs/dojo/1.7.2/dojo/dojo.js"></script> 
 
 
 <script type="text/javascript">
-	dojo.require("dojo.parser");
-	dojo.require("dojox.gfx");
-	dojo.require("dojox.timing");
+require(["dojox/gfx","dojox/timing/_base"],function(gfx,timing){
 	
 	//physics constants
 	var DAMPENING = 0.85;  //damp the velocity by 15%
@@ -57,7 +49,7 @@
 		}
 	};
 
-	ps.timer = new dojox.timing.Timer(55);
+	ps.timer = new timing.Timer(55);
 	ps.timer.onTick =function(){ !ps.inLoop ? ps.gameLoop(): 0;};
 	
 	//saves new mouse position, resets radius
@@ -288,64 +280,63 @@
 		ps.inLoop = false;
 	};
 	
+
+	//tiled images with imagemagick, command line was:
+	// convert -crop 45x45 /home/craigb/Desktop/O_.png ~/jsps/tiles/tile_%d.png
+
+	console.log('[init]');
+	var mainDiv = dojo.byId('main');
+	ps.canvas = dojox.gfx.createSurface(dojo.byId('main'), window.innerWidth,window.innerHeight);
+	dojo.style(mainDiv, 'height', window.innerHeight+'px');
+	dojo.style(mainDiv, 'width', window.innerWidth+'px');
+	dojo.style(mainDiv, 'background', '#000000');
 	
-	dojo.addOnLoad(function(){
-		//tiled images with imagemagick, command line was:
-		// convert -crop 45x45 /home/craigb/Desktop/O_.png ~/jsps/tiles/tile_%d.png
-
-		console.log('[init]');
-		var mainDiv = dojo.byId('main');
-		ps.canvas = dojox.gfx.createSurface(dojo.byId('main'), window.innerWidth,window.innerHeight);
-		dojo.style(mainDiv, 'height', window.innerHeight+'px');
-		dojo.style(mainDiv, 'width', window.innerWidth+'px');
-		dojo.style(mainDiv, 'background', '#000000');
-		
-		//var orange = [246,103,51];
-		//var purple = [82,45,128];
-		//var circle = { cx: 0, cy: 0, r: MIN_PARTICLE_SIZE };
-		//var img = { x: 0, y: 0, width: MIN_PARTICLE_SIZE, height: MIN_PARTICLE_SIZE, src: ''};
-		var rect = { x: 0, y: 0, width: MIN_PARTICLE_SIZE, height: MIN_PARTICLE_SIZE};
-		
-		var count = 0, color=[],i,j,k;
-		color[3] = 1;
-		for(i = 0;i<MAX_COLS;i++){
-			for(j =0;j<MAX_ROWS;j++){
-				/*for(k=0;k<3;k++){
-					color[k] = orange[k] * (j/MAX_COLS) + purple[k]*((MAX_COLS - j)/MAX_COLS) - 100*((MAX_ROWS - i)/MAX_ROWS);
-					color[k] = Math.floor(color[k]);
-					if(color[k]>255){
-						color[k] = 255;
-					}else if (color[k]<0){
-						color[k] = 0;
-					}
-				}*/
-				//rect.src = 'tiles/tile_'+((j-1)*11+i-1) + '.png';
-				//console.log('checking '+i+'x'+j);
-				if(colors[i+'x'+j]){
-					//console.log(colors[i+'x'+j]);
-					
-					//color = colors[(i-1)+'x'+(j-1)];
-					//color[3] = 1;
-					
-					//ps.particles[count] = ps.canvas.createCircle(circle).setFill(colors[i+'x'+j]).setTransform({ dx: 0, dy: 0 });
-					ps.particles[count] = ps.canvas.createRect(rect).setFill(colors[i+'x'+j]).setTransform({ dx: 0, dy: 0, dz: 0 });
-					//ps.particles[count] = ps.canvas.createImage(img).setFill(color).setTransform({ dx: 0, dy: 0 });
-
-					ps.particles[count].restingPos = {x: X_OFFSET+ i*(MIN_PARTICLE_SIZE - 1), y: Y_OFFSET+ j*(MIN_PARTICLE_SIZE - 1)};
-					ps.particles[count].targetPos = {x: 0,y:0};
-					ps.particles[count].velocity = {x: 0, y:0};
-					count++;
+	//var orange = [246,103,51];
+	//var purple = [82,45,128];
+	//var circle = { cx: 0, cy: 0, r: MIN_PARTICLE_SIZE };
+	//var img = { x: 0, y: 0, width: MIN_PARTICLE_SIZE, height: MIN_PARTICLE_SIZE, src: ''};
+	var rect = { x: 0, y: 0, width: MIN_PARTICLE_SIZE, height: MIN_PARTICLE_SIZE};
+	
+	var count = 0, color=[],i,j,k;
+	color[3] = 1;
+	for(i = 0;i<MAX_COLS;i++){
+		for(j =0;j<MAX_ROWS;j++){
+			/*for(k=0;k<3;k++){
+				color[k] = orange[k] * (j/MAX_COLS) + purple[k]*((MAX_COLS - j)/MAX_COLS) - 100*((MAX_ROWS - i)/MAX_ROWS);
+				color[k] = Math.floor(color[k]);
+				if(color[k]>255){
+					color[k] = 255;
+				}else if (color[k]<0){
+					color[k] = 0;
 				}
+			}*/
+			//rect.src = 'tiles/tile_'+((j-1)*11+i-1) + '.png';
+			//console.log('checking '+i+'x'+j);
+			if(colors[i+'x'+j]){
+				//console.log(colors[i+'x'+j]);
+				
+				//color = colors[(i-1)+'x'+(j-1)];
+				//color[3] = 1;
+				
+				//ps.particles[count] = ps.canvas.createCircle(circle).setFill(colors[i+'x'+j]).setTransform({ dx: 0, dy: 0 });
+				ps.particles[count] = ps.canvas.createRect(rect).setFill(colors[i+'x'+j]).setTransform({ dx: 0, dy: 0, dz: 0 });
+				//ps.particles[count] = ps.canvas.createImage(img).setFill(color).setTransform({ dx: 0, dy: 0 });
+
+				ps.particles[count].restingPos = {x: X_OFFSET+ i*(MIN_PARTICLE_SIZE - 1), y: Y_OFFSET+ j*(MIN_PARTICLE_SIZE - 1)};
+				ps.particles[count].targetPos = {x: 0,y:0};
+				ps.particles[count].velocity = {x: 0, y:0};
+				count++;
 			}
 		}
-		
-		ps.timer.start();
-		document.resize = ps.resize;
-		document.onmousemove=ps.setPtr;
-		document.onclick=function(e){
-			console.log(e.clientX, e.clientY,e);
-		}
-	});
+	}
+	
+	ps.timer.start();
+	document.resize = ps.resize;
+	document.onmousemove=ps.setPtr;
+	document.onclick=function(e){
+		console.log(e.clientX, e.clientY,e);
+	}
+});
 </script>
 </head>
   <body>

@@ -1,0 +1,10 @@
+This is a prototype particle system written in javascript, with a run-once component written in C++.  
+It takes an image (I used a logo) and samples the image, creating a JSON array of colors.  
+The JSON file is used to make squares of solid colors that then can be moved around the canvas using some dojo library calls.
+There are a few knobs that you can twidle with in the javascript.  Most of the constants are defined in all caps.  
+You can also choose to use square (solid colors), circles, or images (squares with image tiles).
+Finally, if you type in 
+
+ps.leafBlower=true;
+
+into the JS console, the particles will loose their spring constants to snap back to their resting place.  
